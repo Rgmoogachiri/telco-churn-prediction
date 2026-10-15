@@ -2,7 +2,9 @@
 from pathlib import Path
 
 import joblib
+import matplotlib.pyplot as plt
 import pandas as pd
+import shap
 import streamlit as st
 
 MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "churn_model.joblib"
@@ -16,7 +18,13 @@ def load_model():
     return bundle["pipeline"], bundle["threshold"]
 
 
+@st.cache_resource
+def load_explainer(_pipeline):
+    return shap.TreeExplainer(_pipeline.named_steps["model"])
+
+
 pipeline, threshold = load_model()
+explainer = load_explainer(pipeline)
 
 st.title("Customer churn risk")
 st.write("Enter a customer's details in the sidebar to see their churn risk score.")
@@ -92,6 +100,7 @@ customer = pd.DataFrame(
     ]
 )
 
+# Score
 score = float(pipeline.predict_proba(customer)[0, 1])
 high_risk = score >= threshold
 
@@ -107,6 +116,22 @@ else:
 st.caption(
     "The score ranks customers by risk. Because the model is weighted towards "
     "catching churners, it is not a literal probability of leaving."
+)
+
+# Explanation
+st.subheader("Why this score?")
+customer_t = pipeline.named_steps["preprocess"].transform(customer)
+shap_values = explainer(customer_t)
+
+shap.plots.waterfall(shap_values[0], max_display=10, show=False)
+fig = plt.gcf()
+st.pyplot(fig)
+plt.close(fig)
+
+st.caption(
+    "Red bars push the risk up and blue bars push it down. Values are on the "
+    "model's internal (log-odds) scale, and numeric features are shown in "
+    "standardised units."
 )
 
 with st.expander("Customer record sent to the model"):
